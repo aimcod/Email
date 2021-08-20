@@ -1,48 +1,97 @@
 #!/bin/bash
 
 # The script will install postfix and mailutils if they are not already installed.
-# backups are taken of the relevant files, if they already exist
+# Backups are taken of the relevant files, if they already exist
 # /etc/postfix/main.cf is completely rewritten with the new configuration
-#  we don't touch /etc/aliases  or user mailboxes. If mails are not received by the user, check root's mailbox.
-# script takes 4 parameters, as string, with spaces between them. No quotes are needed. Parameters are as follows:
+# We don't touch /etc/aliases  or user mailboxes. If mails are not received by the user, check root's mailbox.
+# Script takes 4 parameters, as string, with spaces between them. No quotes are needed. Parameters are as follows:
 # server name. can be smtp.gmail.com or any other smtp server that is accessible by the device(s) you are setting up.
+
 # smtp port. can be 465, 587, 25, 2525 or any other smtp port your smtp server is using.
 # username. this is the username of the user that is hosted on the smtp server, on behalf of which you are sending the email from
 # password. the password, in plain text, of the above user. the password is only visible in Package_RemoteConsole, the user who is typing the password in Naverisk or the terminal and to the root user.
 
-
+#example sudo ./setmail smtp.gmail.com 465 username PassWord!
 
 
 hostname=$(hostname)
-sasl='/etc/postfix/sasl/sasl_passwd'
 main='/etc/postfix/main.cf'
 post='/etc/postfix'
+ids=(debian centos rhel fedora suse)
+systemID=$(grep ^ID_LIKE= /etc/os-release | cut -d'=' -f2 | cut -d'"' -f2 | awk '{print $1}')
+likelydebian=$(grep ^ID= /etc/os-release | cut -d'=' -f2 | cut -d'"' -f2 | awk '{print $1}')
 
-state=$(systemctl status postfix --quiet | grep Active | awk '{print $2}')
+
+for id in "${ids[@]}"; do
+
+if [ "" = "$systemID" ]
+then
+        if [ "$id" = "$likelydebian" ]
+        then
+        echo We are on a pure $id system. Continuing with apt sequence...
+
+                aptpostfix=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install postfix)
+                aptmailutils=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install mailutils)
+                postfix=$aptpostfix
+                mailutils=$aptmailutils
+                sasl=/etc/postfix/sasl/sasl_passwd
+                ssl=/etc/ssl/certs/ca-certificates.crt
+
+        fi
+elif [ "$id" = "$systemID" ]
+then
+        echo We are on a $systemID. Running next steps...
+
+        if [ "$id" = "debian" ]
+        then
+                echo We are on a debian based distro. Continuing with apt sequence..
+
+                postfix=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install postfix)
+                mailutils=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install mailutils)
+                sasl=/etc/postfix/sasl/sasl_passwd
+                ssl=/etc/ssl/certs/ca-certificates.crt
+
+        elif [ "$id" = "suse" ]
+        then
+
+                echo We are on a SUSE system. Continuing with zypper sequence...
+                echo sasl file location adjusted for SUSE environment
+                sasl=/etc/postfix/sasl_passwd
+                postfix=$(zypper -n install postfix)
+                mailutils=$(zypper -n install mailx)
+                mail=$(which mailx)
+
+        else
+
+                echo  We are on a Red Hat, or Red Hat based system. Continuing with [backwards compatible]yum sequence.
+
+                echo sasl and certificate  file location adjusted...
+                ssl=/etc/ssl/certs/ca-bundle.crt
+                sasl=/etc/postfix/sasl_passwd
+                postfix=$(yum install postfix -y)
+                mailutils=$(yum install mailx -y)
+                mail=$(which mailx)
+
+        fi
+fi
+
+done
 
 if [ -z $(which postfix) ]
-	then
- echo "Postfix is not installed. Binaries not found; Unit service not found. Installing postfix."
+        then
+        echo "Postfix is not installed. Binaries not found; Unit service not found. Installing postfix."
 
-sleep 2
-echo "postfix postfix/mailname string example.com" | debconf-set-selections
-echo "postfix postfix/main_mailer_type string 'Local only'" | debconf-set-selections
-
- apt update && DEBIAN_FRONTEND=noninteractive apt-get install postfix
+        sleep 2
+        $postfix
 fi
+if [ -z $(which $mail) ]
+        then
 
+        echo -e "Mail utilities are not installed. $mail binaries not found. Installing mail utilities..\n"
 
-if [ -z $(which mailutils) ]
-then
-
-echo -e "Mailutils is not installed. Binaries not found. Installing mailutils.\n"
-
-sleep 2
-
-apt update && DEBIAN_FRONTEND=noninteractive apt-get install mailutils 
-
+        sleep 2
+        $mailutils
 fi
-
 
 if [ -f $main ]  || [ -d $post ]
 then
@@ -51,7 +100,7 @@ echo -e "Backing up original postfix main.cf file...\n"
 
 sleep 2
 
-/sbin/postconf -n >> ~/postfix_config.org
+/usr/sbin/postconf -n >> ~/postfix_config.org
 
 echo -e "Backing up entire postfix directory, just in case..."
 
@@ -73,9 +122,9 @@ sleep 2
 
 bash -c "echo $1:$2 $3:$4 >> $sasl"
 
-chmod -R 0600 /etc/postfix/sasl/*
+chmod -R 0600 $sasl
 
-chown -R root:root /etc/postfix/sasl/*
+chown -R root:root $sasl
 
 echo -e "Creating new $main configuration... and removing old one.\n"
 
@@ -121,16 +170,16 @@ smtp_tls_security_level=encrypt
 smtp_tls_session_cache_database = btree:${data_directory}/smtp_scache
 smtp_tls_wrappermode = yes
 smtp_sasl_auth_enable = yes
-smtp_sasl_password_maps = hash:/etc/postfix/sasl/sasl_passwd
+smtp_sasl_password_maps = hash:$sasl
 smtp_sasl_security_options =
-smtp_tls_CAfile = /etc/ssl/certs/ca-certificates.crt
+smtp_tls_CAfile = $ssl
 smtp_use_tls = yes
 
 smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,defer_unauth_destination
 myhostname = $hostname
 alias_maps = hash:/etc/aliases
 alias_database = hash:/etc/aliases
-mydestination = $hostname,localhost.localdomain,localhost,$1
+#mydestination = $hostname,localhost.localdomain,localhost,$1
 relayhost = $1:$2
 relay_domains = $1
 mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128, $hostname, localhost
@@ -143,10 +192,9 @@ html_directory = /usr/share/doc/postfix/html
 
 EOF
 
-/sbin/postmap $sasl && systemctl reload postfix
-/sbin/postfix check
-/sbin/postconf -n >> ~/postfix_config.new
+/usr/sbin/postmap $sasl && systemctl reload postfix
+/usr/sbin/postfix check
+/usr/sbin/postconf -n >> ~/postfix_config.new
 
-diff ~/postfix_config.new ~/postfix_config.org
+#diff ~/postfix_config.new ~/postfix_config.org
 echo Done!
-
