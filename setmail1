@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # The script will install postfix and mailutils if they are not already installed.
 # Backups are taken of the relevant files, if they already exist
@@ -25,110 +25,122 @@ likelydebian=$(grep ^ID= /etc/os-release | cut -d'=' -f2 | cut -d'"' -f2 | awk '
 for id in "${ids[@]}"; do
 
 if [ "" = "$systemID" ]
-then
-        if [ "$id" = "$likelydebian" ]
-        then
-        echo We are on a pure $id system. Continuing with apt sequence...
+then 
+	if [ "$id" = "$likelydebian" ]
+	then
+	
+		case "$id" in
+			debian) echo We are on a pure $id system. Continuing with apt sequence...
+	
+			postfix=$(DEBIAN_FRONTEND=noninteractive apt-get install postfix)
+			mailutils=$(DEBIAN_FRONTEND=noninteractive apt-get install mailutils)
+			sasl=/etc/postfix/sasl/sasl_passwd
+			ssl=/etc/ssl/certs/ca-certificates.crt
+			;;
+			fedora) echo We are on a pure $id system. Continuing with yum sequence...
+			ssl=/etc/ssl/certs/ca-bundle.crt
+			sasl=/etc/postfix/sasl_passwd
+			postfix=$(yum install postfix -y)
+			mailutils=$(yum install mailx -y)
+			mail=$(which mailx)
+			;;
+		*) echo We are on a $id system. Continuing with the next steps.
+			;;
+	esac
 
-                aptpostfix=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install postfix)
-                aptmailutils=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install mailutils)
-                postfix=$aptpostfix
-                mailutils=$aptmailutils
-                sasl=/etc/postfix/sasl/sasl_passwd
-                ssl=/etc/ssl/certs/ca-certificates.crt
 
-        fi
+	fi
 elif [ "$id" = "$systemID" ]
 then
-        echo We are on a $systemID. Running next steps...
+	echo We are on a $systemID. Running next steps...
+	
+	if [ "$id" = "debian" ]
+	then
+		echo We are on a debian based distro. Continuing with apt sequence..
+		
+		postfix=$(DEBIAN_FRONTEND=noninteractive apt-get install postfix)
+		mailutils=$(DEBIAN_FRONTEND=noninteractive apt-get install mailutils)
+		sasl=/etc/postfix/sasl/sasl_passwd
+		ssl=/etc/ssl/certs/ca-certificates.crt
+		
+	elif [ "$id" = "suse" ]
+	then
+			
+		echo We are on a SUSE system. Continuing with zypper sequence...
+		echo sasl file location adjusted for SUSE environment
+		sasl=/etc/postfix/sasl_passwd
+		postfix=$(zypper -n install postfix)
+		mailutils=$(zypper -n install mailx)
+		mail=$(which mailx)
 
-        if [ "$id" = "debian" ]
-        then
-                echo We are on a debian based distro. Continuing with apt sequence..
+	else
+	
+		echo  We are on a Red Hat, or Red Hat based system. Continuing with [backwards compatible]yum sequence.
+		
+		echo sasl and certificate  file location adjusted...
+		ssl=/etc/ssl/certs/ca-bundle.crt
+		sasl=/etc/postfix/sasl_passwd
+		postfix=$(yum install postfix -y)
+		mailutils=$(yum install mailx -y)
+		mail=$(which mailx)
 
-                postfix=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install postfix)
-                mailutils=$(apt update && DEBIAN_FRONTEND=noninteractive apt-get install mailutils)
-                sasl=/etc/postfix/sasl/sasl_passwd
-                ssl=/etc/ssl/certs/ca-certificates.crt
-
-        elif [ "$id" = "suse" ]
-        then
-
-                echo We are on a SUSE system. Continuing with zypper sequence...
-                echo sasl file location adjusted for SUSE environment
-                sasl=/etc/postfix/sasl_passwd
-                postfix=$(zypper -n install postfix)
-                mailutils=$(zypper -n install mailx)
-                mail=$(which mailx)
-
-        else
-
-                echo  We are on a Red Hat, or Red Hat based system. Continuing with [backwards compatible]yum sequence.
-
-                echo sasl and certificate  file location adjusted...
-                ssl=/etc/ssl/certs/ca-bundle.crt
-                sasl=/etc/postfix/sasl_passwd
-                postfix=$(yum install postfix -y)
-                mailutils=$(yum install mailx -y)
-                mail=$(which mailx)
-
-        fi
+	fi
 fi
 
 done
 
 if [ -z $(which postfix) ]
-        then
-        echo "Postfix is not installed. Binaries not found; Unit service not found. Installing postfix."
+	then
+	echo "Postfix is not installed. Binaries not found; Unit service not found. Installing postfix."
 
-        sleep 2
-        $postfix
+	sleep 1
+	$postfix
 fi
 if [ -z $(which $mail) ]
-        then
+	then
 
-        echo -e "Mail utilities are not installed. $mail binaries not found. Installing mail utilities..\n"
+	echo -e "Mail utilities are not installed. $mail binaries not found. Installing mail utilities..\n"
 
-        sleep 2
-        $mailutils
-fi
+	sleep 1
+	$mailutils
+fi	
 
 if [ -f $main ]  || [ -d $post ]
 then
 
 echo -e "Backing up original postfix main.cf file...\n"
 
-sleep 2
+sleep 1
 
 /usr/sbin/postconf -n >> ~/postfix_config.org
 
 echo -e "Backing up entire postfix directory, just in case..."
 
-sleep 2
+sleep 1
 
 tar cfv /etc/PostfixBack.tar.xz /etc/postfix
 
-sleep 2
+sleep 1
 
 else echo -e "No previous main.cf file found, or a /etc/postfix directory.\n\nNothing found, nothing lost...! :) \n"
 
-sleep 2
+sleep 1
 
 fi
 
 echo -e "Adding $1 $2 $3 $4 to $sasl\n"
 
-sleep 2
+sleep 1
 
 bash -c "echo $1:$2 $3:$4 >> $sasl"
 
 chmod -R 0600 $sasl
 
-chown -R root:root $sasl
+chown -R root:root $sasl 
 
 echo -e "Creating new $main configuration... and removing old one.\n"
 
-sleep 2
+sleep 1
 
 rm $main
 
@@ -172,7 +184,7 @@ smtp_tls_wrappermode = yes
 smtp_sasl_auth_enable = yes
 smtp_sasl_password_maps = hash:$sasl
 smtp_sasl_security_options =
-smtp_tls_CAfile = $ssl
+smtp_tls_CAfile = $ssl 
 smtp_use_tls = yes
 
 smtpd_relay_restrictions = permit_mynetworks,permit_sasl_authenticated,defer_unauth_destination
@@ -192,9 +204,12 @@ html_directory = /usr/share/doc/postfix/html
 
 EOF
 
-/usr/sbin/postmap $sasl && systemctl reload postfix
+/usr/sbin/postmap $sasl && systemctl restart postfix
 /usr/sbin/postfix check
 /usr/sbin/postconf -n >> ~/postfix_config.new
 
 #diff ~/postfix_config.new ~/postfix_config.org
 echo Done!
+
+
+
