@@ -13,6 +13,34 @@
 
 #example sudo ./setmail smtp.gmail.com 465 username PassWord!
 
+# Prompting for SMTP address
+read -p "Enter SMTP address: " smtp_address
+if [ -z "$smtp_address" ]; then
+  echo "SMTP address cannot be empty"
+  exit 1
+fi
+
+# Prompting for SMTP port
+read -p "Enter SMTP port: " smtp_port
+if [ -z "$smtp_port" ]; then
+  echo "SMTP port cannot be empty"
+  exit 1
+fi
+
+# Prompting for SMTP user
+read -p "Enter SMTP user: " smtp_user
+if [ -z "$smtp_user" ]; then
+  echo "SMTP user cannot be empty"
+  exit 1
+fi
+
+# Prompting for SMTP password
+read -s -p "Enter SMTP password: " smtp_password
+echo # Move to a new line after password input
+if [ -z "$smtp_password" ]; then
+  echo "SMTP password cannot be empty"
+  exit 1
+fi
 
 hostname=$(hostname)
 main='/etc/postfix/main.cf'
